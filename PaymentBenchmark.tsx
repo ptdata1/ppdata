@@ -283,7 +283,7 @@ function CompanyCard({ c, data, C, s, compact, headFamily, contactLink, onContac
     const scfGroup = sub && sub.stats.scf[1] != null ? sub : peerGroup || data.groups[0]
     const scf = scfFigures(scfGroup)
     const statusNote = STATUS_NOTE[c.status]
-    const summary = c.current ? buildSummary(c, data, peerGroup) : null
+    const stand = c.current ? standing(c, data) : null
     const questions = c.current ? investigate(c, data) : []
     const cpb = c.current ? cpbInfo(c, data) : null
     const [cpbMethOpen, setCpbMethOpen] = useState(false)
@@ -328,7 +328,30 @@ function CompanyCard({ c, data, C, s, compact, headFamily, contactLink, onContac
                 </div>
             )}
             {statusNote && <div style={s.notice}>{statusNote}</div>}
-            {summary && <div style={s.summary}>{summary}</div>}
+            {stand && stand.compared > 0 && (
+                <div style={s.standing}>
+                    <div style={{ ...s.label, color: C.ink, fontWeight: 600, fontSize: 15 }}>How this company compares with sector peers</div>
+                    {stand.ahead.length > 0 && (
+                        <div style={s.standRow}>
+                            <span style={s.pillGood}>Stronger</span>
+                            <span style={s.standText}>{cap1(joinList(stand.ahead))}</span>
+                        </div>
+                    )}
+                    {stand.behind.length > 0 && (
+                        <div style={s.standRow}>
+                            <span style={s.pillWarm}>Behind</span>
+                            <span style={s.standText}>{cap1(joinList(stand.behind))}</span>
+                        </div>
+                    )}
+                    {!stand.ahead.length && !stand.behind.length && (
+                        <div style={s.standRow}>
+                            <span style={s.pill}>In line</span>
+                            <span style={s.standText}>Within the typical peer range on every measure.</span>
+                        </div>
+                    )}
+                    <div style={{ ...s.caption, marginTop: 8 }}>Stronger or behind means outside the typical range (the middle half of peers) on the favourable or unfavourable side.</div>
+                </div>
+            )}
 
             {c.current && (
                 <div style={{ ...s.legend, marginTop: 20, marginBottom: 0 }}>
@@ -345,7 +368,7 @@ function CompanyCard({ c, data, C, s, compact, headFamily, contactLink, onContac
             )}
             <div style={{ ...s.grid, marginTop: c.current ? 12 : 24 }}>
                 {METRICS.map((m) => (
-                    <MetricTile key={m.key} m={m} v={c.metrics[m.key]} data={data} C={C} s={s} headFamily={headFamily} />
+                    <MetricTile key={m.key} m={m} v={c.metrics[m.key]} data={data} C={C} s={s} headFamily={headFamily} baseN={peerGroup ? peerGroup.stats.d[0] : null} />
                 ))}
             </div>
 
@@ -372,39 +395,25 @@ function CompanyCard({ c, data, C, s, compact, headFamily, contactLink, onContac
                         <div style={{ ...s.label, color: C.ink, fontWeight: 600, fontSize: 15 }}>{CPB_HEADING}</div>
                         <span style={s.pill}>Illustrative</span>
                     </div>
+                    <div style={{ ...s.caption, marginTop: 6, maxWidth: 720 }}>{cpbSubtitle(cpb)}</div>
                     {cpb.state === "estimate" ? (
                         <>
-                            <div style={{ ...s.caption, marginTop: 14 }}>{CPB_LEAD}</div>
-                            <div style={{ ...s.cpbFigure, fontFamily: headFamily }}>
+                            <div style={{ ...s.cpbFigure, marginTop: 12, fontFamily: headFamily }}>
                                 {cpbFigure(cpb)}
                                 {cpb.high >= 1000 && <span style={s.cpbPer}> a year</span>}
                             </div>
-                            <div style={s.cpbStats}>
-                                {cpbStats(cpb).map((t) => (
-                                    <div key={t.label} style={s.cpbStat}>
-                                        <div style={{ ...s.cpbStatValue, fontFamily: headFamily }}>{t.value}</div>
-                                        <div style={s.cpbStatLabel}>{t.label}</div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div style={{ ...s.caption, marginTop: 10 }}>{CPB_SHORT_CAVEAT}</div>
-                            {cpb.capNote && <div style={s.cpbNote}>{cpb.capNote}</div>}
                         </>
                     ) : cpb.state === "none" ? (
-                        <div style={{ ...s.cpbFigure, fontSize: compact ? 20 : 24, fontFamily: headFamily }}>No late payments reported in this period.</div>
+                        <div style={{ ...s.cpbFigure, marginTop: 12, fontSize: compact ? 20 : 24, fontFamily: headFamily }}>No late payments reported in this period.</div>
                     ) : (
                         <div style={{ ...s.caption, marginTop: 12 }}>Estimate not available: this company's supplier spend isn't reported in a form we can use.</div>
                     )}
-                    <div style={s.cpbStatus}>
-                        <span style={s.pillWarm}>{CPB_PILL}</span>
-                        <span style={{ ...s.caption, marginTop: 0 }}>{cpbStatus(data)}</span>
-                    </div>
-                    <button style={s.linkBtn} aria-expanded={cpbMethOpen} onClick={() => setCpbMethOpen(!cpbMethOpen)}>
+                    <button style={{ ...s.linkBtn, marginTop: 12 }} aria-expanded={cpbMethOpen} onClick={() => setCpbMethOpen(!cpbMethOpen)}>
                         How this estimate works {cpbMethOpen ? "▴" : "▾"}
                     </button>
                     {cpbMethOpen && (
                         <div style={{ ...s.caption, marginTop: 8 }}>
-                            {cpbMethod(data)}
+                            {cpbMethod(data, cpb)}
                             {methodologyLink && (
                                 <>
                                     {" "}
@@ -421,32 +430,50 @@ function CompanyCard({ c, data, C, s, compact, headFamily, contactLink, onContac
             <div style={s.scfCard}>
                 <div style={{ ...s.label, color: C.ink, fontWeight: 600, fontSize: 15 }}>Supply chain finance</div>
                 <div style={{ ...s.caption, marginTop: 4 }}>{SCF_DEF}</div>
-                <div style={s.scfLine}>
-                    <div style={s.scfKey}>Company</div>
-                    <div style={{ ...s.scfValue, fontFamily: headFamily }}>
-                        {c.scf === 1 ? "Reports offering SCF" : c.scf === 0 ? "No SCF reported" : "Not stated"}
-                    </div>
-                </div>
-                <div style={s.scfLine}>
-                    <div style={s.scfKey}>Sector</div>
-                    {scf ? (
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ ...s.scfValue, fontFamily: headFamily }}>{scf.pct} report offering SCF</span>
-                            <span style={s.scfMeta}>
-                                {" "}· {fmtInt(scf.x)} of {fmtInt(scf.y)} companies with a known disclosure
+                <div style={s.scfGrid}>
+                    <div style={s.scfTile}>
+                        <div style={s.label}>SCF offered</div>
+                        <div style={s.scfBig}>
+                            <span
+                                aria-hidden
+                                style={{
+                                    ...s.scfMark,
+                                    background: c.scf === 1 ? C.accent : C.track,
+                                    color: c.scf === 1 ? "#fff" : C.muted,
+                                }}
+                            >
+                                {c.scf === 1 ? "✓" : c.scf === 0 ? "✕" : "?"}
+                            </span>
+                            <span style={{ ...s.scfBigText, fontFamily: headFamily }}>
+                                {c.scf === 1 ? "Yes" : c.scf === 0 ? "No" : "Not stated"}
                             </span>
                         </div>
-                    ) : (
-                        <div style={s.scfMeta}>Too few companies with a known disclosure to compare.</div>
-                    )}
+                        <div style={s.caption}>As disclosed in the company's report</div>
+                    </div>
+                    <div style={s.scfTile}>
+                        <div style={s.label}>Sector peers offering SCF</div>
+                        {scf ? (
+                            <>
+                                <div style={{ ...s.scfBigText, marginTop: 6, fontFamily: headFamily }}>{scf.pct}</div>
+                                <div style={s.scfBar} aria-hidden>
+                                    <div style={{ ...s.scfBarFill, width: `${Math.max(2, (scf.x / scf.y) * 100)}%` }} />
+                                </div>
+                                <div style={s.caption}>
+                                    {fmtInt(scf.x)} of {fmtInt(scf.y)} companies with a known disclosure
+                                </div>
+                                {canListPeers && scf.x > 0 && (
+                                    <button style={{ ...s.linkBtn, marginTop: 6 }} onClick={() => openPeers(true)}>
+                                        View peers offering SCF →
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <div style={{ ...s.caption, marginTop: 8 }}>Too few companies with a known disclosure to compare.</div>
+                        )}
+                    </div>
                 </div>
-                {scf && canListPeers && scf.x > 0 && (
-                    <button style={s.linkBtn} onClick={() => openPeers(true)}>
-                        View peers reporting SCF →
-                    </button>
-                )}
                 <div style={{ ...s.caption, fontSize: 12, marginTop: 10 }}>
-                    Disclosures are self-reported and unverified{scf ? ` · Sector: ${peerLabel(scfGroup)}` : ""}.
+                    Self-reported and unverified{scf ? ` · Sector: ${peerLabel(scfGroup)}` : ""}.
                 </div>
                 <div style={s.scfDivider} />
                 <div style={s.pitch}>
@@ -538,36 +565,33 @@ function termsInfo(c: Company, data: Data) {
     return { label, top, comparable, mixed, beyond, isBeyond, peer: g && g.stats.t ? { group: g, share: g.stats.t[1] as number } : null }
 }
 
-function buildSummary(c: Company, data: Data, peerGroup: Group | null): string | null {
-    const d = c.metrics.d
-    if (d.value == null || !peerGroup || peerGroup.stats.d[2] == null) return null
-    const days = `${fmtNum(d.value)} ${d.value === 1 ? "day" : "days"}`
-    const rd = rangeInfo(METRICS[0], d.value, peerGroup.stats.d)
-    let out = `Average payment time is ${days} versus a peer median of ${Math.round(peerGroup.stats.d[2])}.`
-    const l = c.metrics.l
-    const lg = l.group >= 0 ? data.groups[l.group] : null
-    const pos = (r: ReturnType<typeof rangeInfo>) => (r.range === "within" ? "within" : r.range)
-    if (l.value != null && lg && lg.stats.l[2] != null) {
-        const rl = rangeInfo(METRICS[1], l.value, lg.stats.l)
-        out += ` ${fmtNum(l.value)}% of payments missed agreed terms.`
-        out +=
-            rd.range === rl.range
-                ? ` Both measures sit ${pos(rd)} the typical peer range.`
-                : ` Payment time sits ${pos(rd)} the typical peer range; the share missing terms sits ${pos(rl)} it.`
-    } else {
-        out += ` Payment time sits ${pos(rd)} the typical peer range.`
+// Where the company is stronger or behind peers, by measure (names only, so no numbers are repeated).
+const STANDING_NAME = { d: "average time to pay", l: "paying to agreed terms", w: "invoices paid within 30 days", a: "avoiding payments after 60 days" }
+function standing(c: Company, data: Data): { ahead: string[]; behind: string[]; compared: number } {
+    const out = { ahead: [] as string[], behind: [] as string[], compared: 0 }
+    for (const m of METRICS) {
+        const v = c.metrics[m.key]
+        const g = v.group >= 0 ? data.groups[v.group] : null
+        const st = g ? g.stats[m.key] : null
+        if (v.value == null || !st || st[2] == null) continue
+        out.compared++
+        const r = rangeInfo(m, v.value, st)
+        if (r.verdict === "ahead") out.ahead.push(STANDING_NAME[m.key])
+        else if (r.verdict === "behind") out.behind.push(STANDING_NAME[m.key])
     }
     return out
 }
+const cap1 = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+const joinList = (a: string[]) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}` : a[0] || "")
 
 const PITCH =
     "Traditional supply chain finance is built for large corporates: slow to set up and hard work to run. We're building Paytau to change that, making supply chain finance quick to launch and simple to manage for buyers and suppliers alike."
 const SCF_DEF =
-    "Supply chain finance gives eligible suppliers the option to be paid early through third-party funding, while the buyer keeps its cash until the agreed payment date."
+    "Supply chain finance gives eligible suppliers the option to be paid early through third-party funding."
 
 // ---- Commercial Payments Bill estimate (illustrative, never ranked) ----
 // annual spend x share paid late x days late / 365 x (base rate + 8%). Shown as a range; days late is an assumption.
-const CPB_HEADING = "Illustrative effect of the Commercial Payments Bill"
+const CPB_HEADING = "Potential cost of late payments"
 const CPB_DAYS_LOW = 10
 const CPB_DAYS_HIGH = 30
 const CPB_MARGIN = 8 // statutory interest: 8 percentage points over base rate
@@ -599,7 +623,7 @@ function cpbInfo(c: Company, data: Data): CpbInfo | null {
         rate,
         capNote:
             longest != null && longest > 60
-                ? `The Bill would cap payment periods at 60 days for most small suppliers. This company reports longest standard terms of ${fmtNum(longest)} days.`
+                ? "The Bill would cap payment periods at 60 days for most small suppliers."
                 : "",
     }
 }
@@ -612,7 +636,7 @@ function gbpShort(n: number) {
     return `£${Math.max(10, Math.round(r))}`
 }
 
-const CPB_LEAD = "If the Bill were in force today, statutory interest on payments made late could be roughly"
+const CPB_LEAD = "If it were in force today, interest on this company's late payments could be roughly:"
 
 // The headline figure, e.g. "£49k – £150k".
 function cpbFigure(q: CpbInfo) {
@@ -623,27 +647,18 @@ function cpbFigure(q: CpbInfo) {
 }
 
 function cpbMainLine(q: CpbInfo) {
-    return `${CPB_LEAD} ${cpbFigure(q)} a year.`
+    return `If the Bill were in force today, statutory interest on this company's late payments could be roughly ${cpbFigure(q)} a year.`
 }
-
-// The three inputs behind the figure, shown as small stat tiles.
-function cpbStats(q: CpbInfo): { value: string; label: string }[] {
-    return [
-        { value: `${CPB_DAYS_LOW}–${CPB_DAYS_HIGH} days`, label: "assumed average days late" },
-        { value: `${fmtNum(q.late)}%`, label: "of payments not made within agreed terms" },
-        { value: `${rateText(q.rate)}%`, label: "statutory interest rate" },
-    ]
-}
-
-const CPB_SHORT_CAVEAT = "Illustrative only. Assumes every supplier claims interest. The reports do not say how overdue payments are."
 
 function cpbAssumption(q: CpbInfo | null) {
     return `Illustrative only. Assumes payments are ${CPB_DAYS_LOW} to ${CPB_DAYS_HIGH} days late on average, that the share paid late applies equally to value, and that every supplier claims interest. The reports do not say how overdue payments are.`
 }
 
-const CPB_PILL = "Not yet passed"
-function cpbStatus(data: Data) {
-    return "Expected to apply from mid-to-late 2027 and not retrospective. Large companies will also have to report the interest they paid."
+// Subtitle: what the Bill does and where it stands, then (for an estimate) the lead-in to the figure.
+const CPB_SUB =
+    "The Commercial Payments Bill would make interest on late payments mandatory from mid-to-late 2027 (not yet passed)."
+function cpbSubtitle(q: CpbInfo) {
+    return q.state === "estimate" ? `${CPB_SUB} ${CPB_LEAD}` : CPB_SUB
 }
 
 function monthYear(s: string) {
@@ -651,10 +666,10 @@ function monthYear(s: string) {
     return m ? `${MONTHS_LONG[m - 1]} ${y}` : s
 }
 
-function cpbMethod(data: Data) {
+function cpbMethod(data: Data, q?: CpbInfo | null) {
     const base = data.meta.cpb?.baseRate ?? CPB_DEFAULT_BASE
     const when = data.meta.cpb?.baseRateDate ? `, ${monthYear(data.meta.cpb.baseRateDate)}` : ""
-    return `${cpbAssumption(null)} Estimate = annual supplier spend × share of payments not made within agreed terms × days late ÷ 365 × statutory interest rate. Annual spend is twice the reported six-month spend. Statutory interest is the Bank of England base rate (${rateText(base)}%${when}) plus ${CPB_MARGIN}%. Invoice counts stand in for value, and the ${CPB_DAYS_LOW} and ${CPB_DAYS_HIGH} day figures are assumptions. Companies that report no late payments, or no usable spend figure, are not estimated.`
+    return `The Bill has not yet passed. Its interest rules are not expected to be retrospective, and large companies will also have to report the interest they paid. ${cpbAssumption(null)} Estimate = annual supplier spend × share of payments not made within agreed terms × days late ÷ 365 × statutory interest rate. Annual spend is twice the reported six-month spend. The statutory interest rate used is ${rateText(cpbRate(data))}%: the Bank of England base rate (${rateText(base)}%${when}) plus ${CPB_MARGIN}%. Invoice counts stand in for value, and the ${CPB_DAYS_LOW} and ${CPB_DAYS_HIGH} day figures are assumptions. Companies that report no late payments, or no usable spend figure, are not estimated.${q && q.capNote ? ` ${q.capNote}` : ""}`
 }
 
 // ---- "What to investigate": transparent rules over the reported figures (max two items) ----
@@ -821,7 +836,6 @@ function TermsRow({ c, data, C, s, headFamily }) {
             <div>
                 <div style={s.label}>Standard payment terms (as reported)</div>
                 <div style={{ ...s.termsValue, fontFamily: headFamily }}>{t.label}</div>
-                <div style={s.caption}>Average time to pay: {c.metrics.d.value != null ? `${fmtNum(c.metrics.d.value)} days` : "not available"}</div>
             </div>
             <div>
                 {t.comparable ? (
@@ -852,7 +866,7 @@ function TermsRow({ c, data, C, s, headFamily }) {
     )
 }
 
-function MetricTile({ m, v, data, C, s, headFamily }) {
+function MetricTile({ m, v, data, C, s, headFamily, baseN }) {
     const g = v.group >= 0 ? data.groups[v.group] : null
     const st = g ? g.stats[m.key] : null
     const has = v.value != null
@@ -876,10 +890,10 @@ function MetricTile({ m, v, data, C, s, headFamily }) {
                         const r = rangeInfo(m, v.value, st)
                         return (
                             <>
-                                <div style={{ ...s.band, color: r.range === "within" ? C.muted : C.ink }}>{r.label}</div>
+                                <div style={{ ...s.band, color: r.verdict === "ahead" ? C.accent : r.verdict === "behind" ? WARM : C.muted }}>{r.label}</div>
                                 <div style={s.caption}>{r.gap}</div>
                                 <div style={s.caption}>
-                                    Typical range {r.middle} · based on {fmtInt(st[0])} companies
+                                    Typical range {r.middle}{baseN != null && st[0] === baseN ? "" : ` · based on ${fmtInt(st[0])} companies`}
                                 </div>
                             </>
                         )
@@ -1071,7 +1085,11 @@ function printReport(c: Company, data: Data) {
     const pg = c.metrics.d.group >= 0 ? data.groups[c.metrics.d.group] : null
     const scfG = sub && sub.stats.scf[1] != null ? sub : pg || data.groups[0]
     const scf = scfFigures(scfG)
-    const summaryText = c.current ? buildSummary(c, data, pg) : null
+    const stand = c.current ? standing(c, data) : null
+    const standHtml =
+        stand && stand.compared > 0
+            ? `<div class="stand"><strong>How this company compares with sector peers</strong>${stand.ahead.length ? `<div class="srow"><span class="pillg">Stronger</span><span>${esc(cap1(joinList(stand.ahead)))}</span></div>` : ""}${stand.behind.length ? `<div class="srow"><span class="pillw">Behind</span><span>${esc(cap1(joinList(stand.behind)))}</span></div>` : ""}${!stand.ahead.length && !stand.behind.length ? `<div class="srow"><span class="pill">In line</span><span>Within the typical peer range on every measure.</span></div>` : ""}<div class="cap" style="margin-top:6px">Stronger or behind means outside the typical range (the middle half of peers) on the favourable or unfavourable side.</div></div>`
+            : ""
     const questions = c.current ? investigate(c, data) : []
     const P = palette()
 
@@ -1090,7 +1108,7 @@ function printReport(c: Company, data: Data) {
         let body: string
         if (has && st && st[2] != null) {
             const r = rangeInfo(m, v.value as number, st)
-            body = `${strip(v.value as number, st, m.max(st))}<div class="band-label" style="color:${r.range === "within" ? P.muted : P.ink}">${esc(r.label)}</div><div class="cap">${esc(r.gap)}</div><div class="cap">Typical range ${esc(r.middle)} · based on ${fmtInt(st[0])} companies</div>`
+            body = `${strip(v.value as number, st, m.max(st))}<div class="band-label" style="color:${r.verdict === "ahead" ? P.accent : r.verdict === "behind" ? WARM : P.muted}">${esc(r.label)}</div><div class="cap">${esc(r.gap)}</div><div class="cap">Typical range ${esc(r.middle)}${pg && st[0] === pg.stats.d[0] ? "" : ` · based on ${fmtInt(st[0])} companies`}</div>`
         } else body = `<div class="cap">${has ? "Not compared with peers" : "Not reported or withheld pending review"}</div>`
         return `<div class="tile"><div class="lab">${m.label}</div><div class="val">${has ? fmtNum(v.value as number) + `<span class="unit">${m.unit}</span>` : `<span class="unit">Not available</span>`}</div>${body}</div>`
     }).join("")
@@ -1100,23 +1118,22 @@ function printReport(c: Company, data: Data) {
         if (!q) return ""
         const body =
             q.state === "estimate"
-                ? `<div class="cap" style="margin-top:10px">${esc(CPB_LEAD)}</div><div class="fig">${esc(cpbFigure(q))}${q.high >= 1000 ? `<span class="per"> a year</span>` : ""}</div><div class="stats">${cpbStats(q).map((t) => `<div class="stat"><div class="sv">${esc(t.value)}</div><div class="sl">${esc(t.label)}</div></div>`).join("")}</div><div class="cap" style="margin-top:8px">${esc(CPB_SHORT_CAVEAT)}</div>${q.capNote ? `<div class="cnote">${esc(q.capNote)}</div>` : ""}`
+                ? `<div class="fig" style="margin-top:8px">${esc(cpbFigure(q))}${q.high >= 1000 ? `<span class="per"> a year</span>` : ""}</div>`
                 : q.state === "none"
                 ? `<div class="val2" style="margin-top:8px">No late payments reported in this period.</div>`
                 : `<div class="cap" style="margin-top:8px">Estimate not available: this company's supplier spend isn't reported in a form we can use.</div>`
-        return `<div class="box" style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><strong>${esc(CPB_HEADING)}</strong><span class="pill">Illustrative</span></div>${body}<div class="status"><span class="pillw">${esc(CPB_PILL)}</span><span class="cap">${esc(cpbStatus(data))}</span></div><div class="cap" style="margin-top:8px">${esc(cpbMethod(data))}</div></div>`
+        return `<div class="box" style="margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><strong>${esc(CPB_HEADING)}</strong><span class="pill">Illustrative</span></div><div class="cap" style="margin-top:4px">${esc(cpbSubtitle(q))}</div>${body}<div class="cap" style="margin-top:8px">${esc(cpbMethod(data, q))}</div></div>`
     })()
 
     const terms = (() => {
         const t = termsInfo(c, data)
         if (!t) return ""
-        const dv = c.metrics.d.value
         const right = t.comparable
             ? `<div class="band-label" style="color:${t.isBeyond ? P.ink : P.accent}">${t.isBeyond ? `Pays ${t.beyond} days beyond its longest standard terms on average` : "Average time to pay is within its standard terms"}</div>${t.peer ? `<div class="cap">${pct(t.peer.share * 100)} of ${esc(peerLabel(t.peer.group))} pay beyond their longest standard terms on average.</div>` : ""}`
             : t.mixed
             ? `<div class="cap">The average is longer than these standard terms, but only ${fmtNum(c.metrics.l.value ?? 0)}% of invoices are reported as paid late, so most invoices are likely on other agreed terms. Not compared.</div>`
             : `<div class="cap">${c.current ? "Not compared: the reported terms are incomplete or unusual." : "Not compared, as this report is more than 12 months old."}</div>`
-        return `<div class="card two"><div><div class="lab">Standard payment terms (as reported)</div><div class="val2">${esc(t.label)}</div><div class="cap">Average time to pay: ${dv != null ? fmtNum(dv) + " days" : "not available"}</div></div><div>${right}</div></div>`
+        return `<div class="card two"><div><div class="lab">Standard payment terms (as reported)</div><div class="val2">${esc(t.label)}</div></div><div>${right}</div></div>`
     })()
 
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Payment benchmark – ${esc(c.name)}</title>
@@ -1133,7 +1150,8 @@ h1{font-size:20pt;letter-spacing:-.02em;margin:18px 0 6px;line-height:1.15}
 .chip{display:inline-block;background:${P.soft};color:${P.accent};border-radius:999px;padding:1px 9px;font-weight:500;margin-left:6px}
 .basis{color:${P.muted};font-size:8.5pt;margin-top:4px;max-width:150mm}
 .notice{background:#F6F4EC;border-radius:10px;padding:10px 14px;margin-top:12px;font-size:9.5pt}
-.summary{background:${P.soft};border-radius:10px;padding:12px 16px;margin-top:14px;font-size:11pt;line-height:1.5}
+.stand{background:${P.soft};border-radius:10px;padding:12px 16px;margin-top:14px;break-inside:avoid}.srow{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:10.5pt}
+.pillg{background:#fff;color:${P.accent};border-radius:999px;padding:1px 9px;font-size:8pt;font-weight:700;white-space:nowrap}
 .legend{display:flex;gap:16px;margin:16px 0 8px;font-size:8.5pt;color:${P.muted};align-items:center}
 .legend i{display:inline-block;vertical-align:middle;margin-right:5px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -1151,6 +1169,9 @@ h1{font-size:20pt;letter-spacing:-.02em;margin:18px 0 6px;line-height:1.15}
 .cap{font-size:8.5pt;color:${P.muted};margin-top:2px}
 .investigate{margin-top:10px;break-inside:avoid}
 .q{font-weight:600;font-size:10.5pt;border-left:3px solid ${P.bandFill};padding-left:10px;margin-top:8px}
+.scfg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.scfb{display:flex;align-items:center;gap:8px;font-size:20pt;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.1}
+.mark{width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:10pt;font-weight:700}
+.bar{position:relative;height:6px;border-radius:3px;background:${P.track};margin:8px 0 4px}.bar div{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:${P.bandFill}}
 .divider{height:1px;background:${P.line};margin:12px 0}
 .about{background:${P.soft};border-radius:10px;padding:12px 14px}
 .about .lab{margin-bottom:3px}
@@ -1169,7 +1190,7 @@ h1{font-size:20pt;letter-spacing:-.02em;margin:18px 0 6px;line-height:1.15}
 <div class="meta">Reporting period ${fmtDate(c.start)} – ${fmtDate(c.end)}${c.report ? ` · Official report: ${esc(reportUrl(c.report))}` : ""}</div>
 ${!c.current ? `<div class="notice">This is the latest report in our snapshot, but its period ended more than 12 months ago, so it isn't compared with peers.</div>` : ""}
 ${STATUS_NOTE[c.status] ? `<div class="notice">${esc(STATUS_NOTE[c.status])}</div>` : ""}
-${summaryText ? `<div class="summary">${esc(summaryText)}</div>` : ""}
+${standHtml}
 ${c.current ? `<div class="legend"><span><i style="width:10px;height:10px;border-radius:5px;background:${P.ink}"></i>This company</span><span><i style="width:2px;height:12px;background:${P.muted}"></i>Peer median</span><span><i style="width:18px;height:6px;border-radius:3px;background:${P.bandFill}"></i>Typical range (middle 50% of peers)</span></div>` : ""}
 <div class="grid"${c.current ? "" : ` style="margin-top:16px"`}>${tiles}</div>
 ${terms}
@@ -1178,9 +1199,8 @@ ${cpbPdf}
 <div class="box" style="margin-top:10px">
 <strong>Supply chain finance</strong>
 <div class="cap" style="margin-top:3px">${esc(SCF_DEF)}</div>
-<div style="margin-top:8px"><span class="lab" style="display:inline-block;width:64px">Company</span><strong>${c.scf === 1 ? "Reports offering SCF" : c.scf === 0 ? "No SCF reported" : "Not stated"}</strong></div>
-<div style="margin-top:4px"><span class="lab" style="display:inline-block;width:64px;vertical-align:top">Sector</span>${scf ? `<span style="display:inline-block;max-width:140mm"><strong>${scf.pct} report offering SCF</strong> <span class="lab">· ${fmtInt(scf.x)} of ${fmtInt(scf.y)} companies with a known disclosure</span></span>` : `<span class="lab">Too few companies with a known disclosure to compare.</span>`}</div>
-<div class="cap" style="margin-top:8px">Disclosures are self-reported and unverified${scf ? ` · Sector: ${esc(peerLabel(scfG))}` : ""}.</div>
+<div class="scfg"><div class="tile"><div class="lab">SCF offered</div><div class="scfb"><span class="mark" style="background:${c.scf === 1 ? P.accent : P.track};color:${c.scf === 1 ? "#fff" : P.muted}">${c.scf === 1 ? "✓" : c.scf === 0 ? "✕" : "?"}</span>${c.scf === 1 ? "Yes" : c.scf === 0 ? "No" : "Not stated"}</div><div class="cap">As disclosed in the company's report</div></div><div class="tile"><div class="lab">Sector peers offering SCF</div>${scf ? `<div class="scfb">${scf.pct}</div><div class="bar"><div style="width:${Math.max(2, (scf.x / scf.y) * 100)}%"></div></div><div class="cap">${fmtInt(scf.x)} of ${fmtInt(scf.y)} companies with a known disclosure</div>` : `<div class="cap" style="margin-top:6px">Too few companies with a known disclosure to compare.</div>`}</div></div>
+<div class="cap" style="margin-top:8px">Self-reported and unverified${scf ? ` · Sector: ${esc(peerLabel(scfG))}` : ""}.</div>
 <div class="divider"></div>
 <div class="about"><div class="lab">About Paytau</div>${esc(PITCH)}<div style="margin-top:6px;font-weight:600;color:${P.accent}">Discuss supplier early payment → paytau.app</div></div>
 </div>
@@ -1307,8 +1327,10 @@ const STATUS_NOTE = {
 }
 
 // Where a company sits against its peers. "Typical range" = the middle half of peers (25th to 75th percentile).
-// It is descriptive only: it says nothing about whether a result is good or bad.
-const RANGE_LABEL = { below: "Below typical range", within: "Within typical range", above: "Above typical range" }
+// Verdicts are directional: for days, late and after-60-day shares lower is better; for the share paid within 30 days higher is better.
+// "Stronger"/"Behind" only means outside the middle half of peers on the favourable/unfavourable side.
+const WARM = "#8A5A12"
+const VERDICT_LABEL = { ahead: "Stronger than typical peers", within: "Within typical range", behind: "Behind typical peers" }
 
 function rangeInfo(m: { key: string; short: string }, value: number, st: number[]) {
     const range: "below" | "within" | "above" = value < st[1] ? "below" : value > st[3] ? "above" : "within"
@@ -1316,7 +1338,10 @@ function rangeInfo(m: { key: string; short: string }, value: number, st: number[
     const n = Math.abs(diff)
     const unit = m.key === "d" ? (n === 1 ? "day" : "days") : n === 1 ? "percentage point" : "percentage points"
     const gap = n <= (m.key === "d" ? 1 : 2) ? "In line with the peer median" : `${n} ${unit} ${diff > 0 ? "above" : "below"} the peer median`
-    return { range, label: RANGE_LABEL[range], gap: `${gap} (${fmtStat(st[2])}${m.short})`, middle: `${fmtStat(st[1])}–${fmtStat(st[3])}${m.short}` }
+    const higherBetter = m.key === "w"
+    const verdict: "ahead" | "within" | "behind" =
+        range === "within" ? "within" : (range === "below") === !higherBetter ? "ahead" : "behind"
+    return { range, verdict, label: VERDICT_LABEL[verdict], gap: `${gap} (${fmtStat(st[2])}${m.short})`, middle: `${fmtStat(st[1])}–${fmtStat(st[3])}${m.short}` }
 }
 
 function rangePhrase(r: ReturnType<typeof rangeInfo>) {
@@ -1480,8 +1505,15 @@ function styles(C, compact: boolean): Record<string, React.CSSProperties> {
         },
         termsValue: { fontSize: 20, fontWeight: 600, marginTop: 6, letterSpacing: "-0.01em" },
         scfCard: { border: `1px solid ${C.line}`, borderRadius: 16, padding: compact ? 18 : 22, marginTop: compact ? 12 : 16 },
+        scfGrid: { display: "grid", gridTemplateColumns: compact ? "1fr" : "1fr 1fr", gap: compact ? 10 : 12, marginTop: 14 },
+        scfTile: { border: `1px solid ${C.line}`, borderRadius: 14, padding: compact ? "14px 16px" : "16px 18px" },
+        scfBig: { display: "flex", alignItems: "center", gap: 10, marginTop: 6 },
+        scfMark: { width: 28, height: 28, borderRadius: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, flexShrink: 0 },
+        scfBigText: { fontSize: compact ? 28 : 32, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.1 },
+        scfBar: { position: "relative", height: 6, borderRadius: 3, background: C.track, margin: "10px 0 6px" },
+        scfBarFill: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 3, background: C.bandFill },
         scfLine: { display: "flex", gap: 12, alignItems: "baseline", marginTop: 10 },
-        scfKey: { fontSize: 14, color: C.muted, width: compact ? 64 : 72, flexShrink: 0 },
+        scfKey: { fontSize: 14, color: C.muted, width: compact ? 96 : 132, flexShrink: 0 },
         scfMeta: { fontSize: 14, color: C.muted },
         scfDivider: { height: 1, background: C.line, margin: compact ? "16px 0" : "18px 0" },
         scfValue: { fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" },
@@ -1516,6 +1548,10 @@ function styles(C, compact: boolean): Record<string, React.CSSProperties> {
             fontFamily: "inherit",
         },
         insight: { background: C.soft, borderRadius: 12, padding: "12px 16px", fontSize: 15, lineHeight: 1.5, margin: "0 0 18px", color: C.ink },
+        standing: { background: C.soft, borderRadius: 14, padding: compact ? "14px 16px" : "16px 20px", margin: "20px 0 0" },
+        standRow: { display: "flex", gap: 12, alignItems: compact ? "flex-start" : "center", marginTop: 10, flexDirection: compact ? "column" : "row" },
+        standText: { fontSize: compact ? 15 : 16, lineHeight: 1.4, color: C.ink },
+        pillGood: { background: "#fff", color: C.accent, borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" },
         summary: { background: C.soft, borderRadius: 12, padding: "14px 18px", fontSize: compact ? 15 : 16, lineHeight: 1.55, margin: "20px 0 0", color: C.ink },
         showAll: {
             marginTop: 12,
